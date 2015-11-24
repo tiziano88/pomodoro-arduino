@@ -1,7 +1,8 @@
+#include <avr/power.h>
+#include <avr/interrupt.h>
+#include <avr/io.h>
+
 #include <Adafruit_NeoPixel.h>
-#ifdef __AVR__
-  #include <avr/power.h>
-#endif
 
 #define PIN 8
 
@@ -14,18 +15,38 @@
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(24, PIN, NEO_GRB + NEO_KHZ800);
 
-uint32_t remaining = strip.Color(0, 64, 0);
-uint32_t elapsed = strip.Color(64, 0, 0);
-uint32_t flash = strip.Color(255, 255, 255);
+const uint32_t remaining = strip.Color(0, 64, 0);
+const uint32_t elapsed = strip.Color(64, 0, 0);
+const uint32_t flash = strip.Color(255, 255, 255);
+const uint32_t pauseColor = strip.Color(0, 0, 64);
+
+const uint64_t max_time_millis = 25 * 60 * 1000L;
 
 uint64_t start_time_millis = 0L;
 
-uint64_t max_time_millis = 25 * 60 * 1000L;
+bool paused = false;
+bool blink = false;
+uint64_t blinkDelay = 1000L;
+
 
 // IMPORTANT: To reduce NeoPixel burnout risk, add 1000 uF capacitor across
 // pixel power leads, add 300 - 500 Ohm resistor on first pixel's data input
 // and minimize distance between Arduino and first pixel.  Avoid connecting
 // on a live circuit...if you must, connect GND first.
+
+const int buttonCount = 4;
+int buttonPins[buttonCount] = {10, 9, 12, 11};
+int buttonCurrent[buttonCount] = {0};
+int buttonPrevious[buttonCount] = {0};
+int buttonDelta[buttonCount] = {0};
+
+void updateButtons() {
+  for (int i = 0; i < buttonCount; i++) {
+    buttonPrevious[i] = buttonCurrent[i];
+    buttonCurrent[i] = digitalRead(buttonPins[i]);
+    buttonDelta[i] = buttonCurrent[i] - buttonPrevious[i];
+  }
+}
 
 void setup() {
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
@@ -34,11 +55,32 @@ void setup() {
   #endif
   // End of trinket special code
 
+  // See http://www.engblaze.com/microcontroller-tutorial-avr-and-arduino-timer-interrupts/
+  // Disable interrupts.
+  cli();
+  TCCR1A = 0;
+  TCCR1B = 0;
+  OCR1A = 15624;
+  TCCR1B |= (1 << WGM12);
+  TCCR1B |= (1 << CS10);
+  TCCR1B |= (1 << CS12);
+  TIMSK1 |= (1 << OCIE1A);
+  // Enble interrupts.
+  sei();
+
+  for (int i = 0; i < buttonCount; i++) {
+    pinMode(buttonPins[i], INPUT);
+  }
+  updateButtons();
 
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
-  
+
   start_time_millis = millis();
+}
+
+ISR(TIMER1_COMPA_vect) {
+  // TODO.
 }
 
 //Theatre-style crawling lights.
@@ -59,9 +101,48 @@ void theaterChase(uint32_t c, uint8_t wait) {
   }
 }
 
+void loop1() {
+  strip.clear();
+  /*strip.setPixelColor(0, (digitalRead(button1) == HIGH) ? remaining : elapsed);*/
+  /*strip.setPixelColor(1, (digitalRead(button2) == HIGH) ? remaining : elapsed);*/
+  /*strip.setPixelColor(2, (digitalRead(button3) == HIGH) ? remaining : elapsed);*/
+  /*strip.setPixelColor(3, (digitalRead(button4) == HIGH) ? remaining : elapsed);*/
+  strip.show();
+}
+
+void allLeds(uint32_t color) {
+  for(int i = 0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, color);
+  }
+}
+
 void loop() {
+  updateButtons();
+
   uint64_t time_millis = millis();
-  
+
+  if (buttonDelta[0] > 0) {
+    start_time_millis = time_millis;
+  }
+
+  if (buttonDelta[1] > 0) {
+    paused = !paused;
+  }
+
+  if (paused) {
+    strip.clear();
+
+    blink = !blink;
+    if (blink) {
+      allLeds(pauseColor);
+    }
+
+    strip.show();
+
+    delay(blinkDelay);
+    return;
+  }
+
   strip.clear();
   for(int i = 0; i < strip.numPixels(); i++) {
     int threshold = strip.numPixels() * (time_millis - start_time_millis) / max_time_millis;
@@ -69,25 +150,13 @@ void loop() {
     strip.setPixelColor(i, color);
   }
   strip.show();
-  
+
   if (time_millis > max_time_millis) {
     theaterChase(flash, 50);
     start_time_millis = time_millis;
   }
-  
+
   delay(100);
-  // Some example procedures showing how to display to the pixels:
-//  colorWipe(strip.Color(255, 0, 0), 50); // Red
-//  colorWipe(strip.Color(0, 255, 0), 50); // Green
-//  colorWipe(strip.Color(0, 0, 255), 50); // Blue
-//  // Send a theater pixel chase in...
-//  theaterChase(strip.Color(127, 127, 127), 50); // White
-//  theaterChase(strip.Color(127, 0, 0), 50); // Red
-//  theaterChase(strip.Color(0, 0, 127), 50); // Blue
-//
-//  rainbow(20);
-//  rainbowCycle(20);
-//  theaterChaseRainbow(50);
 }
 
 // Fill the dots one after the other with a color

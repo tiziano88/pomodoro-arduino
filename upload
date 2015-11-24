@@ -2,6 +2,5 @@
 
 export BOARD=pro5v328
 export SERIALDEV=/dev/ttyS4
-make
-avrdude  -DV -p atmega328p -c usbtiny -b 57600 -U flash:w:pomodoro.hex:i
+make && avrdude  -DV -p atmega328p -c usbtiny -b 57600 -U flash:w:pomodoro.hex:i
 #make upload
