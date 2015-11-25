@@ -62,32 +62,10 @@ void setup() {
   #endif
   // End of trinket special code
 
-  // See http://www.engblaze.com/microcontroller-tutorial-avr-and-arduino-timer-interrupts/
-  // Disable interrupts.
-  cli();
-  TCCR1A = 0;
-  TCCR1B = 0;
-  OCR1A = 15624;
-  TCCR1B |= (1 << WGM12);
-  TCCR1B |= (1 << CS10);
-  TCCR1B |= (1 << CS12);
-  TIMSK1 |= (1 << OCIE1A);
-  // Enble interrupts.
-  sei();
-
-  for (int i = 0; i < buttonCount; i++) {
-    pinMode(buttonPins[i], INPUT);
-  }
   updateButtons();
 
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
-
-  start_time_millis = millis();
-}
-
-ISR(TIMER1_COMPA_vect) {
-  // TODO.
 }
 
 //Theatre-style crawling lights.
@@ -106,15 +84,6 @@ void theaterChase(uint32_t c, uint8_t wait) {
       }
     }
   }
-}
-
-void loop1() {
-  strip.clear();
-  /*strip.setPixelColor(0, (digitalRead(button1) == HIGH) ? remaining : elapsed);*/
-  /*strip.setPixelColor(1, (digitalRead(button2) == HIGH) ? remaining : elapsed);*/
-  /*strip.setPixelColor(2, (digitalRead(button3) == HIGH) ? remaining : elapsed);*/
-  /*strip.setPixelColor(3, (digitalRead(button4) == HIGH) ? remaining : elapsed);*/
-  strip.show();
 }
 
 void allLeds(uint32_t color) {
@@ -180,7 +149,7 @@ void loop() {
     state = STOPPED;
   }
 
-  if ((end_time_millis != 0L) && time_millis > end_time_millis) {
+  if ((end_time_millis != 0L) && (time_millis > end_time_millis) && (state == RUNNING)) {
     state = FINISHED;
   }
 
@@ -200,15 +169,6 @@ void loop() {
       break;
   }
   strip.show();
-}
-
-// Fill the dots one after the other with a color
-void colorWipe(uint32_t c, uint8_t wait) {
-  for(uint16_t i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i, c);
-    strip.show();
-    delay(wait);
-  }
 }
 
 // Input a value 0 to 255 to get a color value.
