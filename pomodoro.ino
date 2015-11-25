@@ -20,14 +20,18 @@ const uint32_t elapsed = strip.Color(64, 0, 0);
 const uint32_t flash = strip.Color(255, 255, 255);
 const uint32_t pauseColor = strip.Color(0, 0, 64);
 
-const uint64_t max_time_millis = 25 * 60 * 1000L;
+const uint64_t delta_time_millis = 25 * 60 * 1000L;
 
 uint64_t start_time_millis = 0L;
+uint64_t end_time_millis = 0L;
 
 bool paused = false;
 bool blink = false;
 uint64_t blinkDelay = 1000L;
 
+enum State { STOPPED, RUNNING, PAUSED, FINISHED };
+
+State state = STOPPED;
 
 // IMPORTANT: To reduce NeoPixel burnout risk, add 1000 uF capacitor across
 // pixel power leads, add 300 - 500 Ohm resistor on first pixel's data input
@@ -116,47 +120,66 @@ void allLeds(uint32_t color) {
   }
 }
 
-void loop() {
-  updateButtons();
+double animate(double phase) {
+  /*return 0.5 + (1.0 / (1.0 + exp(-(phase - 0.5))));*/
+  return (1.0 + sin(phase * 2.0 * PI)) / 2.0;
+}
 
-  uint64_t time_millis = millis();
+void pulse(uint64_t time_millis) {
+  double v = animate((time_millis % 5000) / 5000.0);
+  allLeds(strip.Color(v * 64, 0, 0));
+}
 
-  if (buttonDelta[0] > 0) {
-    start_time_millis = time_millis;
-  }
-
-  if (buttonDelta[1] > 0) {
-    paused = !paused;
-  }
-
-  if (paused) {
-    strip.clear();
-
-    blink = !blink;
-    if (blink) {
-      allLeds(pauseColor);
-    }
-
-    strip.show();
-
-    delay(blinkDelay);
-    return;
-  }
-
-  strip.clear();
+void running(uint64_t time_millis) {
   for(int i = 0; i < strip.numPixels(); i++) {
-    int threshold = strip.numPixels() * (time_millis - start_time_millis) / max_time_millis;
+    int threshold = strip.numPixels() * (time_millis - start_time_millis) / delta_time_millis;
     uint32_t color = (i < threshold) ? elapsed : remaining;
     strip.setPixelColor(i, color);
   }
-  strip.show();
+}
 
-  if (time_millis > max_time_millis) {
-    theaterChase(flash, 50);
+void finished(uint64_t time_millis) {
+  double v = animate(((time_millis / 10) % 128) / 128.0);
+  allLeds(strip.Color(v * 64, v * 64, v * 64));
+}
+
+void loop() {
+  uint64_t time_millis = millis();
+
+  updateButtons();
+
+  if (buttonDelta[0] > 0) {
     start_time_millis = time_millis;
+    end_time_millis = start_time_millis + delta_time_millis;
+    state = RUNNING;
   }
 
-  delay(100);
+  if (buttonDelta[1] > 0) {
+    if (state == PAUSED) {
+      state = RUNNING;
+    } else if (state == RUNNING) {
+      state = PAUSED;
+    }
+  }
+
+  if ((end_time_millis != 0L) && time_millis > end_time_millis) {
+    state = FINISHED;
+  }
+
+  strip.clear();
+  switch(state) {
+    case STOPPED:
+      pulse(time_millis);
+      break;
+    case RUNNING:
+      running(time_millis);
+      break;
+    case PAUSED:
+    case FINISHED:
+      finished(time_millis);
+      break;
+  }
+  strip.show();
 }
 
 // Fill the dots one after the other with a color
