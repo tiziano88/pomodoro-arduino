@@ -15,8 +15,6 @@
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(24, PIN, NEO_GRB + NEO_KHZ800);
 
-const uint32_t remaining = strip.Color(0, 64, 0);
-const uint32_t elapsed = strip.Color(64, 0, 0);
 const uint32_t flash = strip.Color(255, 255, 255);
 const uint32_t pauseColor = strip.Color(0, 0, 64);
 
@@ -24,10 +22,7 @@ const uint64_t delta_time_millis = 25 * 60 * 1000L;
 
 uint64_t start_time_millis = 0L;
 uint64_t end_time_millis = 0L;
-
-bool paused = false;
-bool blink = false;
-uint64_t blinkDelay = 1000L;
+uint64_t pause_time_millis = 0L;
 
 enum State { STOPPED, RUNNING, PAUSED, FINISHED };
 
@@ -43,6 +38,14 @@ int buttonPins[buttonCount] = {10, 9, 12, 11};
 int buttonCurrent[buttonCount] = {0};
 int buttonPrevious[buttonCount] = {0};
 int buttonDelta[buttonCount] = {0};
+
+uint32_t elapsedColor(double intensity) {
+  return strip.Color(intensity * 64, 0, 0);
+}
+
+uint32_t remainingColor(double intensity) {
+  return strip.Color(0, intensity * 64, 0);
+}
 
 void updateButtons() {
   for (int i = 0; i < buttonCount; i++) {
@@ -133,13 +136,22 @@ void pulse(uint64_t time_millis) {
 void running(uint64_t time_millis) {
   for(int i = 0; i < strip.numPixels(); i++) {
     int threshold = strip.numPixels() * (time_millis - start_time_millis) / delta_time_millis;
-    uint32_t color = (i < threshold) ? elapsed : remaining;
+    uint32_t color = (i < threshold) ? elapsedColor(1.0) : remainingColor(1.0);
+    strip.setPixelColor(i, color);
+  }
+}
+
+void paused(uint64_t time_millis) {
+  double v = animate((time_millis % 2000) / 2000.0);
+  for(int i = 0; i < strip.numPixels(); i++) {
+    int threshold = strip.numPixels() * (pause_time_millis - start_time_millis) / delta_time_millis;
+    uint32_t color = (i < threshold) ? elapsedColor(v) : remainingColor(v);
     strip.setPixelColor(i, color);
   }
 }
 
 void finished(uint64_t time_millis) {
-  double v = animate(((time_millis / 10) % 128) / 128.0);
+  double v = animate((time_millis % 1000) / 1000.0);
   allLeds(strip.Color(v * 64, v * 64, v * 64));
 }
 
@@ -148,18 +160,24 @@ void loop() {
 
   updateButtons();
 
+  // Play/pause.
   if (buttonDelta[0] > 0) {
-    start_time_millis = time_millis;
-    end_time_millis = start_time_millis + delta_time_millis;
-    state = RUNNING;
-  }
-
-  if (buttonDelta[1] > 0) {
     if (state == PAUSED) {
       state = RUNNING;
+      end_time_millis += time_millis - pause_time_millis;
     } else if (state == RUNNING) {
       state = PAUSED;
+      pause_time_millis = time_millis;
+    } else if (state == STOPPED) {
+      start_time_millis = time_millis;
+      end_time_millis = start_time_millis + delta_time_millis;
+      state = RUNNING;
     }
+  }
+
+  // Stop.
+  if (buttonDelta[1] > 0) {
+    state = STOPPED;
   }
 
   if ((end_time_millis != 0L) && time_millis > end_time_millis) {
@@ -175,6 +193,8 @@ void loop() {
       running(time_millis);
       break;
     case PAUSED:
+      paused(time_millis);
+      break;
     case FINISHED:
       finished(time_millis);
       break;
